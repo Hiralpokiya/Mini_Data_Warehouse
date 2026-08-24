@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Mini DWH Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:       #0f1117;
+    --surface:  #181c27;
+    --surface2: #1e2333;
+    --border:   rgba(255,255,255,0.07);
+    --border2:  rgba(255,255,255,0.12);
+    --text:     #e8eaf0;
+    --muted:    #7c8498;
+    --accent:   #4f8ef7;
+    --green:    #38d9a9;
+    --amber:    #f6a623;
+    --red:      #e05c5c;
+    --font:     'DM Sans', sans-serif;
+    --mono:     'DM Mono', monospace;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; }
+
+  /* Layout */
+  .layout { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 220px; background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 28px 0; display: flex; flex-direction: column;
+    flex-shrink: 0; position: fixed; top: 0; left: 0; bottom: 0; z-index: 10;
+  }
+  .logo { padding: 0 24px 24px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+  .logo-icon {
+    width: 38px; height: 38px; background: var(--accent);
+    border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    font-size: 20px; margin-bottom: 10px; color: #fff;
+  }
+  .logo-title { font-size: 13px; font-weight: 600; }
+  .logo-sub   { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .nav { padding: 0 12px; }
+  .nav-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); padding: 0 12px; margin-bottom: 6px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; border-radius: 8px;
+    font-size: 13px; color: var(--muted); cursor: pointer;
+    transition: all 0.15s; text-decoration: none;
+  }
+  .nav-item:hover { background: var(--surface2); color: var(--text); }
+  .nav-item.active { background: rgba(79,142,247,0.15); color: var(--accent); }
+  .sidebar-bottom { margin-top: auto; padding: 16px 12px 0; border-top: 1px solid var(--border); }
+  .db-badge {
+    background: rgba(56,217,169,0.08); border: 1px solid rgba(56,217,169,0.2);
+    border-radius: 8px; padding: 10px 12px; font-size: 11px;
+  }
+  .db-label  { color: var(--muted); margin-bottom: 3px; }
+  .db-status { color: var(--green); font-weight: 500; display: flex; align-items: center; gap: 5px; }
+  .db-dot    { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* Main */
+  .main { margin-left: 220px; flex: 1; }
+  .topbar {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 16px 32px; display: flex; align-items: center;
+    justify-content: space-between; position: sticky; top: 0; z-index: 5;
+  }
+  .topbar-title { font-size: 16px; font-weight: 600; }
+  .topbar-sub   { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .filters label { font-size: 12px; color: var(--muted); }
+  .filters select {
+    background: var(--surface2); border: 1px solid var(--border2);
+    color: var(--text); font-family: var(--font); font-size: 12px;
+    padding: 6px 10px; border-radius: 7px; cursor: pointer; outline: none;
+  }
+  .filters select:focus { border-color: var(--accent); }
+  .refresh-btn {
+    background: rgba(79,142,247,0.15); border: 1px solid rgba(79,142,247,0.3);
+    color: var(--accent); font-family: var(--font); font-size: 12px;
+    padding: 6px 14px; border-radius: 7px; cursor: pointer; transition: all 0.2s;
+  }
+  .refresh-btn:hover { background: rgba(79,142,247,0.25); }
+
+  .content { padding: 28px 32px; }
+
+  /* Loading */
+  .loading {
+    display: flex; align-items: center; justify-content: center;
+    gap: 10px; padding: 60px; color: var(--muted); font-size: 13px;
+  }
+  .spinner {
+    width: 18px; height: 18px; border: 2px solid var(--surface2);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Error */
+  .error-box {
+    background: rgba(224,92,92,0.1); border: 1px solid rgba(224,92,92,0.3);
+    border-radius: 10px; padding: 20px; color: var(--red);
+    font-size: 13px; margin-bottom: 20px; display: none;
+  }
+  .error-box code { font-family: var(--mono); font-size: 12px; }
+
+  /* KPI Grid */
+  .kpi-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 14px; margin-bottom: 24px;
+  }
+  .kpi-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 20px; position: relative;
+    overflow: hidden; transition: border-color 0.2s, transform 0.2s;
+    animation: fadeUp 0.4s ease both;
+  }
+  .kpi-card:hover { border-color: var(--border2); transform: translateY(-2px); }
+  .kpi-card::before {
+    content:''; position: absolute; top:0; left:0; right:0;
+    height: 3px; border-radius: 14px 14px 0 0;
+  }
+  .kpi-card.blue::before   { background: var(--accent); }
+  .kpi-card.green::before  { background: var(--green); }
+  .kpi-card.amber::before  { background: var(--amber); }
+  .kpi-card.red::before    { background: var(--red); }
+  .kpi-card:nth-child(1){animation-delay:.05s}.kpi-card:nth-child(2){animation-delay:.10s}
+  .kpi-card:nth-child(3){animation-delay:.15s}.kpi-card:nth-child(4){animation-delay:.20s}
+  .kpi-card:nth-child(5){animation-delay:.25s}.kpi-card:nth-child(6){animation-delay:.30s}
+  .kpi-card:nth-child(7){animation-delay:.35s}.kpi-card:nth-child(8){animation-delay:.40s}
+  .kpi-icon {
+    width: 36px; height: 36px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; margin-bottom: 14px;
+  }
+  .kpi-icon.blue   { background: rgba(79,142,247,0.15); }
+  .kpi-icon.green  { background: rgba(56,217,169,0.15); }
+  .kpi-icon.amber  { background: rgba(246,166,35,0.15); }
+  .kpi-icon.red    { background: rgba(224,92,92,0.15); }
+  .kpi-label { font-size: 11px; text-transform: uppercase; letter-spacing:.8px; color: var(--muted); margin-bottom: 6px; }
+  .kpi-value { font-size: 26px; font-weight: 600; color: var(--text); font-family: var(--mono); letter-spacing: -1px; }
+  .kpi-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 3px 8px; border-radius: 20px; margin-top: 8px; }
+  .badge-green  { background: rgba(56,217,169,0.1);  color: var(--green); }
+  .badge-amber  { background: rgba(246,166,35,0.1);  color: var(--amber); }
+  .badge-red    { background: rgba(224,92,92,0.1);   color: var(--red); }
+  .badge-blue   { background: rgba(79,142,247,0.1);  color: var(--accent); }
+
+  /* Cards */
+  .charts-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .tables-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .card, .card-full {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 22px;
+    animation: fadeUp 0.4s ease 0.3s both;
+  }
+  .card-full { margin-bottom: 16px; }
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .card-title  { font-size: 14px; font-weight: 500; }
+  .card-tag    { font-size: 11px; padding: 3px 9px; background: var(--surface2); border-radius: 20px; color: var(--muted); }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-dot  { width: 10px; height: 10px; border-radius: 3px; }
+
+  /* Status bars */
+  .status-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .status-bar-lbl { width: 80px; font-size: 12px; }
+  .status-bar-track { flex:1; height:8px; background: var(--surface2); border-radius:20px; overflow:hidden; }
+  .status-bar-fill  { height:100%; border-radius:20px; transition: width 0.6s ease; }
+  .status-bar-val   { width:30px; font-size:12px; font-family:var(--mono); text-align:right; }
+
+  /* Tables */
+  .data-table { width: 100%; border-collapse: collapse; }
+  .data-table th {
+    font-size: 11px; text-transform: uppercase; letter-spacing:.7px;
+    color: var(--muted); font-weight: 500;
+    padding: 0 0 10px; text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .data-table td {
+    padding: 10px 0; border-bottom: 1px solid var(--border);
+    font-size: 13px; color: var(--text); vertical-align: middle;
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { color: #fff; }
+  .rank-num    { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  .amount-cell { font-family: var(--mono); font-size: 13px; color: var(--green); text-align: right; }
+  .cat-pill    { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: var(--surface2); color: var(--muted); }
+
+  @keyframes fadeUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-icon">&#9783;</div>
+      <div class="logo-title">Mini DWH</div>
+      <div class="logo-sub">Analysis</div>
+    </div>
+    <div class="nav">
+      <div class="nav-lbl">Analytics</div>
+      <a class="nav-item active" href="#">&#9632; &nbsp; Overview</a>
+     
+    </div>
+    <div class="nav" style="margin-top:16px;">
+      <div class="nav-lbl">Layers</div>
+      
+      <a class="nav-item active" href="#">&#9679; &nbsp; Gold</a>
+    </div>
+    <div class="sidebar-bottom">
+      <div class="db-badge">
+        <div class="db-label">PostgreSQL</div>
+        <div class="db-status"><div class="db-dot"></div>Connected</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <div class="topbar-title">Dashboard Overview</div>
+        <div class="topbar-sub" id="last-updated">Loading from database...</div>
+      </div>
+      <div class="filters">
+        <label>Status</label>
+        <select id="statusFilter" onchange="applyFilters()">
+          <option value="all">All Statuses</option>
+          <option value="Completed">Completed</option>
+          <option value="Pending">Pending</option>
+          <option value="Cancelled">Cancelled</option>
+        </select>
+        <label>Category</label>
+        <select id="catFilter" onchange="applyFilters()">
+          <option value="all">All Categories</option>
+        </select>
+        <button class="refresh-btn" onclick="loadAll()">&#8635; Refresh</button>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- Error box -->
+      <div class="error-box" id="error-box">
+        <strong>Cannot connect to API.</strong> Make sure Flask is running:<br>
+        <code>cd your-project && source venv/bin/activate && python report/app.py</code><br><br>
+        Then refresh this page.
+      </div>
+
+      <!-- KPI Cards -->
+      <div class="kpi-grid" id="kpi-grid">
+        <div class="loading"><div class="spinner"></div> Loading KPIs from database...</div>
+      </div>
+
+      <!-- Trend -->
+      <div class="card-full">
+        <div class="card-header">
+          <div class="card-title">Monthly revenue trend</div>
+          <span class="card-tag">Completed orders only</span>
+        </div>
+        <div style="position:relative;height:200px;">
+          <canvas id="trendChart" role="img" aria-label="Monthly revenue trend"></canvas>
+        </div>
+      </div>
+
+      <!-- Charts row -->
+      <div class="charts-row">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Revenue by category</div>
+            <span class="card-tag" id="cat-total">—</span>
+          </div>
+          <div class="legend" id="cat-legend"></div>
+          <div style="position:relative;height:220px;">
+            <canvas id="catChart" role="img" aria-label="Revenue by category"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Order status</div>
+            <span class="card-tag" id="status-total">—</span>
+          </div>
+          <div style="position:relative;height:180px;margin-bottom:16px;">
+            <canvas id="statusChart" role="img" aria-label="Order status donut"></canvas>
+          </div>
+          <div id="status-bars"></div>
+        </div>
+      </div>
+
+      <!-- Tables row -->
+      <div class="tables-row">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Top customers</div>
+            <span class="card-tag">by revenue</span>
+          </div>
+          <table class="data-table">
+            <thead><tr><th style="width:28px">#</th><th>Customer</th><th>Orders</th><th style="text-align:right">Revenue</th></tr></thead>
+            <tbody id="cust-table"><tr><td colspan="4"><div class="loading"><div class="spinner"></div>Loading...</div></td></tr></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Top products</div>
+            <span class="card-tag">by revenue</span>
+          </div>
+          <table class="data-table">
+            <thead><tr><th style="width:28px">#</th><th>Product</th><th>Category</th><th style="text-align:right">Revenue</th></tr></thead>
+            <tbody id="prod-table"><tr><td colspan="4"><div class="loading"><div class="spinner"></div>Loading...</div></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:8000/api';
+const PALETTE = {
+  Electronics:'#4f8ef7', Furniture:'#38d9a9', Accessories:'#f6a623',
+  Completed:'#38d9a9', Pending:'#f6a623', Cancelled:'#e05c5c'
+};
+
+let catChart, statusChart, trendChart;
+let allOrders = [];
+
+function fmt(n) {
+  if (n === null || n === undefined) return '$0.00';
+  return '$' + parseFloat(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function showError(msg) {
+  const box = document.getElementById('error-box');
+  box.style.display = 'block';
+  console.error(msg);
+}
+
+// ── Fetch all data from Flask API ─────────────────────────────
+async function loadAll() {
+  document.getElementById('error-box').style.display = 'none';
+  document.getElementById('last-updated').textContent = 'Refreshing...';
+  try {
+    const [kpis, catData, statusData, trendData, custData, prodData, orders] = await Promise.all([
+      fetch(`${API}/kpis`).then(r => r.json()),
+      fetch(`${API}/revenue-by-category`).then(r => r.json()),
+      fetch(`${API}/order-status`).then(r => r.json()),
+      fetch(`${API}/monthly-trend`).then(r => r.json()),
+      fetch(`${API}/top-customers`).then(r => r.json()),
+      fetch(`${API}/top-products`).then(r => r.json()),
+      fetch(`${API}/orders`).then(r => r.json()),
+    ]);
+
+    allOrders = orders;
+    populateCatFilter(orders);
+    renderKPIs(kpis);
+    renderCatChart(catData);
+    renderStatusChart(statusData);
+    renderTrendChart(trendData);
+    renderCustTable(custData);
+    renderProdTable(prodData);
+
+    const now = new Date().toLocaleTimeString();
+    document.getElementById('last-updated').textContent =
+      `Gold Layer — PostgreSQL — Last updated: ${now}`;
+  } catch (err) {
+    showError(err);
+    document.getElementById('last-updated').textContent = 'Connection failed — is Flask running?';
+  }
+}
+
+// ── Populate category filter ──────────────────────────────────
+function populateCatFilter(orders) {
+  const sel = document.getElementById('catFilter');
+  const cats = [...new Set(orders.map(o => o.category))].filter(Boolean);
+  sel.innerHTML = '<option value="all">All Categories</option>';
+  cats.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c; opt.textContent = c;
+    sel.appendChild(opt);
+  });
+}
+
+// ── Apply filters using allOrders ────────────────────────────
+function applyFilters() {
+  const st = document.getElementById('statusFilter').value;
+  const ct = document.getElementById('catFilter').value;
+  const filtered = allOrders.filter(o =>
+    (st === 'all' || o.order_status === st) &&
+    (ct === 'all' || o.category === ct)
+  );
+  renderFromFiltered(filtered);
+}
+
+function renderFromFiltered(data) {
+  const done    = data.filter(o => o.order_status === 'Completed');
+  const pending = data.filter(o => o.order_status === 'Pending');
+  const canc    = data.filter(o => o.order_status === 'Cancelled');
+  const rev     = done.reduce((s,o) => s + parseFloat(o.total_amount||0), 0);
+  const units   = done.reduce((s,o) => s + parseInt(o.quantity||0), 0);
+  const avg     = done.length ? rev / done.length : 0;
+  const compPct = data.length ? Math.round(done.length * 100 / data.length) : 0;
+
+  const kpis = {
+    total_revenue:     rev.toFixed(2),
+    total_orders:      data.length,
+    total_customers:   new Set(data.map(o=>o.customer_name)).size,
+    units_sold:        units,
+    avg_order_value:   avg.toFixed(2),
+    completed_orders:  done.length,
+    pending_orders:    pending.length,
+    cancelled_orders:  canc.length,
+  };
+  renderKPIs(kpis);
+
+  const cats = {};
+  done.forEach(o => { cats[o.category] = (cats[o.category]||0) + parseFloat(o.total_amount||0); });
+  renderCatChart(Object.entries(cats).map(([category, revenue]) => ({ category, revenue: revenue.toFixed(2) })));
+
+  const statusMap = {};
+  data.forEach(o => {
+    if (!statusMap[o.order_status]) statusMap[o.order_status] = { order_status: o.order_status, total_orders: 0, total_value: 0 };
+    statusMap[o.order_status].total_orders++;
+    statusMap[o.order_status].total_value += parseFloat(o.total_amount||0);
+  });
+  const total = data.length;
+  renderStatusChart(Object.values(statusMap).map(s => ({
+    ...s,
+    percentage: total ? (s.total_orders * 100 / total).toFixed(1) : 0
+  })));
+
+  const custMap = {};
+  done.forEach(o => {
+    if (!custMap[o.customer_name]) custMap[o.customer_name] = { total_orders:0, total_spent:0 };
+    custMap[o.customer_name].total_orders++;
+    custMap[o.customer_name].total_spent += parseFloat(o.total_amount||0);
+  });
+  const custs = Object.entries(custMap)
+    .sort((a,b) => b[1].total_spent - a[1].total_spent)
+    .slice(0,10)
+    .map(([customer_name, v]) => ({ customer_name, ...v, total_spent: v.total_spent.toFixed(2) }));
+  renderCustTable(custs);
+
+  const prodMap = {};
+  done.forEach(o => {
+    if (!prodMap[o.product_name]) prodMap[o.product_name] = { category: o.category, units_sold:0, revenue:0 };
+    prodMap[o.product_name].units_sold += parseInt(o.quantity||0);
+    prodMap[o.product_name].revenue += parseFloat(o.total_amount||0);
+  });
+  const prods = Object.entries(prodMap)
+    .sort((a,b) => b[1].revenue - a[1].revenue)
+    .slice(0,10)
+    .map(([product_name, v]) => ({ product_name, ...v, revenue: v.revenue.toFixed(2) }));
+  renderProdTable(prods);
+}
+
+// ── Render KPI Cards ──────────────────────────────────────────
+function renderKPIs(k) {
+  const compPct = k.total_orders > 0 ? Math.round(k.completed_orders * 100 / k.total_orders) : 0;
+  document.getElementById('kpi-grid').innerHTML = `
+    <div class="kpi-card blue">
+      <div class="kpi-icon blue">$</div>
+      <div class="kpi-label">Total Revenue</div>
+      <div class="kpi-value">${fmt(k.total_revenue)}</div>
+      <div class="kpi-badge badge-green">${k.completed_orders} completed</div>
+    </div>
+    <div class="kpi-card green">
+      <div class="kpi-icon green">&#9724;</div>
+      <div class="kpi-label">Total Orders</div>
+      <div class="kpi-value">${k.total_orders}</div>
+      <div class="kpi-badge badge-blue">all statuses</div>
+    </div>
+    <div class="kpi-card amber">
+      <div class="kpi-icon amber">&#9650;</div>
+      <div class="kpi-label">Customers</div>
+      <div class="kpi-value">${k.total_customers}</div>
+      <div class="kpi-badge badge-amber">unique</div>
+    </div>
+    <div class="kpi-card green">
+      <div class="kpi-icon green">&#9679;</div>
+      <div class="kpi-label">Units Sold</div>
+      <div class="kpi-value">${k.units_sold}</div>
+      <div class="kpi-badge badge-green">items</div>
+    </div>
+    <div class="kpi-card blue">
+      <div class="kpi-icon blue">&#8776;</div>
+      <div class="kpi-label">Avg Order Value</div>
+      <div class="kpi-value">${fmt(k.avg_order_value)}</div>
+      <div class="kpi-badge badge-blue">per order</div>
+    </div>
+    <div class="kpi-card green">
+      <div class="kpi-icon green">&#10003;</div>
+      <div class="kpi-label">Completed</div>
+      <div class="kpi-value">${k.completed_orders}</div>
+      <div class="kpi-badge badge-green">${compPct}% rate</div>
+    </div>
+    <div class="kpi-card amber">
+      <div class="kpi-icon amber">&#9679;</div>
+      <div class="kpi-label">Pending</div>
+      <div class="kpi-value">${k.pending_orders}</div>
+      <div class="kpi-badge badge-amber">waiting</div>
+    </div>
+    <div class="kpi-card red">
+      <div class="kpi-icon red">&#10005;</div>
+      <div class="kpi-label">Cancelled</div>
+      <div class="kpi-value">${k.cancelled_orders}</div>
+      <div class="kpi-badge badge-red">lost</div>
+    </div>
+  `;
+}
+
+// ── Render Category Chart ─────────────────────────────────────
+function renderCatChart(data) {
+  const labels = data.map(d => d.category);
+  const vals   = data.map(d => parseFloat(d.revenue));
+  const colors = labels.map(l => PALETTE[l] || '#7c8498');
+  const total  = vals.reduce((s,v)=>s+v,0);
+
+  document.getElementById('cat-total').textContent = fmt(total);
+  document.getElementById('cat-legend').innerHTML = labels.map((l,i) =>
+    `<span class="legend-item"><span class="legend-dot" style="background:${colors[i]}"></span>${l}</span>`
+  ).join('');
+
+  if (catChart) catChart.destroy();
+  catChart = new Chart(document.getElementById('catChart'), {
+    type: 'bar',
+    data: { labels, datasets: [{ data: vals, backgroundColor: colors, borderRadius: 6, borderSkipped: false }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid:{display:false}, ticks:{color:'#7c8498', font:{size:11}} },
+        y: { grid:{color:'rgba(255,255,255,0.05)'}, ticks:{color:'#7c8498', font:{size:11, family:'DM Mono'}, callback: v => '$'+v} }
+      }
+    }
+  });
+}
+
+// ── Render Status Chart ───────────────────────────────────────
+function renderStatusChart(data) {
+  const labels = data.map(d => d.order_status);
+  const counts = data.map(d => parseInt(d.total_orders));
+  const colors = labels.map(l => PALETTE[l] || '#7c8498');
+  const total  = counts.reduce((s,v)=>s+v,0);
+
+  document.getElementById('status-total').textContent = total + ' orders';
+
+  if (statusChart) statusChart.destroy();
+  statusChart = new Chart(document.getElementById('statusChart'), {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data: counts, backgroundColor: colors, borderWidth: 0, hoverOffset: 4 }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout:'70%', plugins:{legend:{display:false}} }
+  });
+
+  document.getElementById('status-bars').innerHTML = data.map((d,i) => {
+    const pct = total ? Math.round(parseInt(d.total_orders)*100/total) : 0;
+    return `<div class="status-bar-row">
+      <div class="status-bar-lbl" style="color:${colors[i]}">${d.order_status}</div>
+      <div class="status-bar-track"><div class="status-bar-fill" style="width:${pct}%;background:${colors[i]}"></div></div>
+      <div class="status-bar-val" style="color:var(--muted)">${d.total_orders}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Render Trend Chart ────────────────────────────────────────
+function renderTrendChart(data) {
+  const labels = data.map(d => d.month);
+  const vals   = data.map(d => parseFloat(d.revenue));
+
+  if (trendChart) trendChart.destroy();
+  trendChart = new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: { labels, datasets: [{
+      label: 'Revenue', data: vals,
+      borderColor: '#4f8ef7',
+      backgroundColor: 'rgba(79,142,247,0.08)',
+      fill: true, tension: 0.4,
+      pointRadius: 6, pointBackgroundColor: '#4f8ef7',
+      pointBorderColor: '#0f1117', pointBorderWidth: 2
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend:{display:false} },
+      scales: {
+        x: { grid:{display:false}, ticks:{color:'#7c8498', font:{size:11}} },
+        y: { grid:{color:'rgba(255,255,255,0.05)'}, ticks:{color:'#7c8498', font:{size:11, family:'DM Mono'}, callback: v => '$'+v} }
+      }
+    }
+  });
+}
+
+// ── Render Customer Table ─────────────────────────────────────
+function renderCustTable(data) {
+  document.getElementById('cust-table').innerHTML = data.length === 0
+    ? '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:20px">No data</td></tr>'
+    : data.map((r,i) => `
+        <tr>
+          <td class="rank-num">${i+1}</td>
+          <td>${r.customer_name}</td>
+          <td style="color:var(--muted)">${r.total_orders}</td>
+          <td class="amount-cell">${fmt(r.total_spent)}</td>
+        </tr>`).join('');
+}
+
+// ── Render Product Table ──────────────────────────────────────
+function renderProdTable(data) {
+  document.getElementById('prod-table').innerHTML = data.length === 0
+    ? '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:20px">No data</td></tr>'
+    : data.map((r,i) => `
+        <tr>
+          <td class="rank-num">${i+1}</td>
+          <td>${r.product_name}</td>
+          <td><span class="cat-pill">${r.category}</span></td>
+          <td class="amount-cell">${fmt(r.revenue)}</td>
+        </tr>`).join('');
+}
+
+// ── Boot ──────────────────────────────────────────────────────
+loadAll();
+</script>
+</body>
+</html>
