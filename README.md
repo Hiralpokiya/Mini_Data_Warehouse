@@ -1,4 +1,5 @@
 # Mini Data Warehouse
+Live Link : https://mini-dwh-hiral.vercel.app/
 
 A SQL-based Data Warehouse project built using **Medallion Architecture**
 (Bronze → Silver → Gold) with PostgreSQL.
