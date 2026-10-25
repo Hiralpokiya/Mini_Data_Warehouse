@@ -4,7 +4,7 @@ import requests
 import psycopg2
 import psycopg2.extras
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
 
@@ -110,15 +110,19 @@ def load_orders(conn):
             unit_price = float(item.get("price", 0))
             total      = round(qty * unit_price, 2)
 
+            # The carts API has no dates, so order dates are simulated:
+            # spread deterministically over the last 12 months.
+            order_date = datetime.now() - timedelta(days=(order_id * 37) % 365)
+
             if   order_id % 10 == 0: status, ship = "Cancelled", None
             elif order_id % 4  == 0: status, ship = "Pending",   None
-            else:                    status, ship = "Completed",  datetime.now()
+            else:                    status, ship = "Completed", order_date + timedelta(days=3)
 
             rows.append((
                 order_id, f"ORD{order_id:04d}",
                 cust_id, item.get("id", 1),
                 qty, unit_price, total,
-                status, datetime.now(), ship,
+                status, order_date, ship,
             ))
             order_id += 1
 
@@ -144,7 +148,9 @@ def verify(conn):
 
 
 if __name__ == "__main__":
-    conn = psycopg2.connect(**DB_CONFIG)
+    # DATABASE_URL (e.g. Neon) takes priority; otherwise use the DB_* settings
+    url = os.getenv("DATABASE_URL")
+    conn = psycopg2.connect(url) if url else psycopg2.connect(**DB_CONFIG)
     try:
         load_customers(conn)
         load_products(conn)

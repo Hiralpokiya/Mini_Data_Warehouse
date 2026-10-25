@@ -19,7 +19,9 @@ DB_CONFIG = {
 }
 
 def get_conn():
-    return psycopg2.connect(**DB_CONFIG)
+    # In production (Vercel + Neon) use DATABASE_URL; locally fall back to DB_* settings
+    url = os.getenv("DATABASE_URL")
+    return psycopg2.connect(url) if url else psycopg2.connect(**DB_CONFIG)
 
 def query(sql, params=None):
     conn = get_conn()
